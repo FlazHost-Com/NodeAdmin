@@ -1,0 +1,55 @@
+name: Sync starter → flazhost-runner
+
+on:
+  push:
+    tags: ['template-v*']
+  workflow_dispatch:
+
+concurrency:
+  group: sync-runner
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    # Hanya berjalan di repo bersih FlazHost-Com/NodeAdmin.
+    # File ini ikut ter-mirror tapi TIDAK boleh jalan di repo lain.
+    if: github.repository == 'FlazHost-Com/NodeAdmin'
+    steps:
+      - name: Checkout monorepo (ref yang memicu)
+        uses: actions/checkout@v4
+
+      - name: Mint GitHub App token (scoped, 1 jam)
+        id: apptoken
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.RUNNER_SYNC_APP_ID }}
+          private-key: ${{ secrets.RUNNER_SYNC_APP_KEY }}
+          owner: flazhost-runner
+          repositories: nodeadmin
+
+      - name: Sync kode app → flazhost-runner (file deploy dipertahankan)
+        env:
+          TOKEN: ${{ steps.apptoken.outputs.token }}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/flazhost-runner/nodeadmin.git" target
+          # Update HANYA kode app dari template/. File milik flazhost-runner di
+          # --exclude TIDAK terhapus maupun tertimpa.
+          rsync -a --delete \
+            --exclude='.git/' \
+            --exclude='/Dockerfile' \
+            --exclude='/docker-entrypoint.sh' \
+            --exclude='/.dockerignore' \
+            --exclude='/.github/' \
+            template/ target/
+          cd target
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Tidak ada perubahan kode app — lewati."
+            exit 0
+          fi
+          git config user.name  flazhost-bot
+          git config user.email bot@flazhost.com
+          git commit -q -m "sync app: ${GITHUB_REF_NAME:-manual} from ${GITHUB_REPOSITORY}@${GITHUB_SHA::7}"
+          git push origin HEAD:main
