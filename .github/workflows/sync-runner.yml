@@ -42,7 +42,6 @@ jobs:
             --exclude='/docker-entrypoint.sh' \
             --exclude='/.dockerignore' \
             --exclude='/.github/' \
-            --exclude='/.flazhost/' \
             template/ target/
           cd target
           git add -A
